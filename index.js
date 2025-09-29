@@ -11,14 +11,18 @@ const EMAIL_PASS = process.env.GMAIL_PASS || "";
 const EMAIL_TO = process.env.EMAIL_TO;
 
 const LOCATION = process.env.LOCATION || "M9B 0E4";
-const PART_NUMBER = process.env.PART_NUMBER || "MFY84VC/A";
+const PART_NUMBERS = [
+  { part: "MFY84VC/A", label: "256GB" },
+  { part: "MFYC4VC/A", label: "512GB" },
+];
 const ENABLE_CHECK = process.env.ENABLE_CHECK !== "false";
 
-const APPLE_API_URL = `https://www.apple.com/ca/shop/fulfillment-messages?fae=true&pl=true&mts.0=regular&parts.0=${PART_NUMBER}&location=${encodeURIComponent(
-  LOCATION
-)}`;
+const APPLE_API_URL = (part) =>
+  `https://www.apple.com/ca/shop/fulfillment-messages?fae=true&pl=true&mts.0=regular&parts.0=${part}&location=${encodeURIComponent(
+    LOCATION
+  )}`;
 
-async function fetchStock() {
+async function fetchStock(part) {
   try {
     const browser = await puppeteer.launch({
       headless: "new",
@@ -68,7 +72,7 @@ async function fetchStock() {
       }
     });
 
-    await page.goto(APPLE_API_URL, { waitUntil: "networkidle2" });
+    await page.goto(APPLE_API_URL(part), { waitUntil: "networkidle2" });
     await new Promise((resolve) => setTimeout(resolve, 3000));
     await browser.close();
     return json;
@@ -77,7 +81,7 @@ async function fetchStock() {
   }
 }
 
-function parseStock(data) {
+function parseStock(data, part) {
   const stores =
     data.body &&
     data.body.content &&
@@ -85,13 +89,12 @@ function parseStock(data) {
     data.body.content.pickupMessage.stores;
   if (!stores) return [];
   return stores.filter((store) => {
-    const part =
-      store.partsAvailability && store.partsAvailability["MFY84VC/A"];
-    return part && part.pickupDisplay === "available";
+    const pa = store.partsAvailability && store.partsAvailability[part];
+    return pa && pa.pickupDisplay === "available";
   });
 }
 
-async function sendEmail(stores) {
+async function sendEmail(stores, label) {
   const transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 465,
@@ -104,25 +107,20 @@ async function sendEmail(stores) {
 
   const storeDetails = stores
     .map(
-      (store, idx) => `Store #${idx + 1}:
-- Name: ${store.storeName}
-- Address: ${store.address.address}${
-        store.address.address2 ? ", " + store.address.address2 : ""
-      }, ${store.city}, ${store.state}, ${store.address.postalCode}
-- Phone: ${store.phoneNumber}
-- Store Email: ${store.storeEmail}
-- Reservation Link: ${store.reservationUrl}
-- Store Image: ${store.storeImageUrl}
-- Distance: ${store.storeDistanceWithUnit || store.storedistance + " km"}
-`
+      (store, idx) =>
+        `Store #${idx + 1} (${label}):\n- Name: ${
+          store.storeName
+        }\n- Address: ${store.address.address}${
+          store.address.address2 ? ", " + store.address.address2 : ""
+        }\n`
     )
     .join("\n---------------------\n");
 
   const mailOptions = {
     from: EMAIL_USER,
     to: EMAIL_TO,
-    subject: `iPhone 17 Pro Max 256GB in stock at ${stores.length} store(s)`,
-    text: `The iPhone 17 Pro Max 256GB is available for pickup at the following store(s):\n\n${storeDetails}\n\nCheck and reserve here: https://www.apple.com/ca/shop/buy-iphone/iphone-17-pro\n\nThis is an automated notification.`,
+    subject: `iPhone 17 Pro Max ${label} in stock`,
+    text: `The iPhone 17 Pro Max ${label} is available for pickup at the following store(s):\n\n${storeDetails}\n\nCheck and reserve here: https://www.apple.com/ca/shop/buy-iphone/iphone-17-pro\n\nThis is an automated notification.`,
   };
 
   try {
@@ -130,11 +128,11 @@ async function sendEmail(stores) {
     console.log(
       `[${new Date().toISOString()}] Email sent: ${
         stores.length
-      } store(s) in stock.`
+      } store(s) in stock for ${label}.`
     );
   } catch (err) {
     console.error(
-      `[${new Date().toISOString()}] Email send failed:`,
+      `[${new Date().toISOString()}] Email send failed for ${label}:`,
       err.message
     );
   }
@@ -145,18 +143,25 @@ async function main() {
     console.log("Stock checking is disabled by ENABLE_CHECK flag.");
     return;
   }
-  const data = await fetchStock();
-  if (!data) {
-    console.error(
-      `[${new Date().toISOString()}] No data returned from fetchStock.`
-    );
-    return;
+  let found = false;
+  for (const { part, label } of PART_NUMBERS) {
+    const data = await fetchStock(part);
+    if (!data) {
+      console.error(
+        `[${new Date().toISOString()}] No data returned from fetchStock for ${label}.`
+      );
+      continue;
+    }
+    const availableStores = parseStock(data, part);
+    if (availableStores.length > 0) {
+      await sendEmail(availableStores, label);
+      found = true;
+    } else {
+      console.log(`[${new Date().toISOString()}] No stock found for ${label}.`);
+    }
   }
-  const availableStores = parseStock(data);
-  if (availableStores.length > 0) {
-    await sendEmail(availableStores);
-  } else {
-    console.log(`[${new Date().toISOString()}] No stock found.`);
+  if (!found) {
+    // No email sent for any model
   }
 }
 
