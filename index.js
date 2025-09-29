@@ -31,11 +31,17 @@ async function fetchStock() {
       "https://www.apple.com/ca/shop/buy-iphone/iphone-17-pro";
     await page.goto(familyPageUrl, { waitUntil: "networkidle2" });
     await new Promise((resolve) => setTimeout(resolve, 3000));
+    console.log("Visited family page");
+    let cookies = await page.cookies();
+    console.log("Cookies after family page:", cookies);
     // Visiting the specific product page to get more accurate cookies so as to avoid bot detection
     const productDetailUrl =
       "https://www.apple.com/ca/shop/buy-iphone/iphone-17-pro/6.9-inch-display-256gb-silver";
     await page.goto(productDetailUrl, { waitUntil: "networkidle2" });
     await new Promise((resolve) => setTimeout(resolve, 3000));
+    console.log("Visited product detail page");
+    cookies = await page.cookies();
+    console.log("Cookies after product detail page:", cookies);
 
     await page.setExtraHTTPHeaders({
       accept: "*/*",
@@ -56,18 +62,31 @@ async function fetchStock() {
     let json = null;
     page.on("response", async (response) => {
       if (response.url().includes("/fulfillment-messages")) {
+        console.log(
+          "Fulfillment API request:",
+          response.url(),
+          response.status()
+        );
         try {
           const buffer = await response.buffer();
           const text = buffer.toString();
+          console.log("Fulfillment API response text:", text.slice(0, 500));
           json = JSON.parse(text);
         } catch (e) {
-          // ignore
+          console.log("Error parsing fulfillment API response:", e);
         }
       }
     });
 
     await page.goto(APPLE_API_URL, { waitUntil: "networkidle2" });
     await new Promise((resolve) => setTimeout(resolve, 3000));
+    if (!json) {
+      const content = await page.content();
+      console.log(
+        "Could not extract JSON. Page content:\n",
+        content.slice(0, 1000)
+      );
+    }
     await browser.close();
     return json;
   } catch (error) {
