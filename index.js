@@ -1,8 +1,10 @@
-const axios = require("axios");
 const nodemailer = require("nodemailer");
 const puppeteer = require("puppeteer-extra");
+require("dotenv").config();
 const StealthPlugin = require("puppeteer-extra-plugin-stealth");
 puppeteer.use(StealthPlugin());
+
+console.log(`[${new Date().toISOString()}] Script started`);
 
 const EMAIL_USER = process.env.GMAIL_USER || "shubham.jhamb2000@gmail.com";
 const EMAIL_PASS = process.env.GMAIL_PASS || "";
@@ -71,8 +73,6 @@ async function fetchStock() {
     await browser.close();
     return json;
   } catch (error) {
-    console.error("Error fetching stock info (puppeteer):", error.message);
-    console.error(error);
     return null;
   }
 }
@@ -87,7 +87,7 @@ function parseStock(data) {
   return stores.filter((store) => {
     const part =
       store.partsAvailability && store.partsAvailability["MFY84VC/A"];
-    return part && part.pickupDisplay === "unavailable";
+    return part && part.pickupDisplay === "available";
   });
 }
 
@@ -128,17 +128,15 @@ async function sendEmail(stores) {
   try {
     await transporter.sendMail(mailOptions);
     console.log(
-      `Email sent for stores: ${stores
-        .map((s) => s.storeName)
-        .join(", ")} to ${EMAIL_TO}`
+      `[${new Date().toISOString()}] Email sent: ${
+        stores.length
+      } store(s) in stock.`
     );
   } catch (err) {
     console.error(
-      `Failed to send email for stores: ${stores
-        .map((s) => s.storeName)
-        .join(", ")}`
+      `[${new Date().toISOString()}] Email send failed:`,
+      err.message
     );
-    console.error(err);
   }
 }
 
@@ -149,19 +147,16 @@ async function main() {
   }
   const data = await fetchStock();
   if (!data) {
-    console.log("No data returned from fetchStock.");
+    console.error(
+      `[${new Date().toISOString()}] No data returned from fetchStock.`
+    );
     return;
   }
-  console.log("Fetched data:", JSON.stringify(data, null, 2));
   const availableStores = parseStock(data);
-  console.log(
-    "Available stores:",
-    availableStores.map((s) => s.storeName)
-  );
   if (availableStores.length > 0) {
     await sendEmail(availableStores);
   } else {
-    console.log("No stock found.");
+    console.log(`[${new Date().toISOString()}] No stock found.`);
   }
 }
 
