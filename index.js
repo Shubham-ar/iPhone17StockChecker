@@ -19,7 +19,7 @@ const APPLE_API_URL = `https://www.apple.com/ca/shop/fulfillment-messages?fae=tr
 async function fetchStock() {
   try {
     const browser = await puppeteer.launch({
-      headless: true,
+      headless: false,
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
     const page = await browser.newPage();
