@@ -84,7 +84,7 @@ function parseStock(data) {
   return stores.filter((store) => {
     const part =
       store.partsAvailability && store.partsAvailability["MFY84VC/A"];
-    return part && part.pickupDisplay === "available";
+    return part && part.pickupDisplay === "unavailable";
   });
 }
 
